@@ -22,7 +22,7 @@ const server = http.createServer(app);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({
-  origin: ["http://localhost:5173", "http://192.168.1.100:5173"], // Add your local IP address
+  origin: ["http://localhost:5173", "http://192.168.1.100:5173", "https://sw-frontend-25jq.onrender.com"], // Add your local IP address
   credentials: true
 }));
 
