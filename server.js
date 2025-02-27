@@ -396,6 +396,68 @@ app.post('/api/login', async (req, res) => {
     });
   }
 });
+// Update user name (requires auth)
+app.post('/api/updateName', authenticateToken, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+
+    const result = await pool.query(
+      'UPDATE users SET name = $1 WHERE id = $2 RETURNING id, name, email',
+      [name, req.user.id]
+    );
+
+    res.json({ user: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating name:', error);
+    res.status(500).json({ error: 'Failed to update name' });
+  }
+});
+
+// Update profile photo (requires auth)
+app.post('/api/updateProfilePhoto', authenticateToken, upload.single('profilePhoto'), async (req, res) => {
+  try {
+    const { filename } = req.file;
+
+    const result = await pool.query(
+      'UPDATE users SET profile_photo = $1 WHERE id = $2 RETURNING id, name, email, profile_photo',
+      [filename, req.user.id]
+    );
+
+    res.json({ user: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating profile photo:', error);
+    res.status(500).json({ error: 'Failed to update profile photo' });
+  }
+});
+
+// Change password (requires auth)
+app.post('/api/changePassword', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new passwords are required' });
+    }
+
+    const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+    const user = result.rows[0];
+
+    const validPassword = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, req.user.id]);
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
 
 // Create a session (requires auth)
 app.post('/api/sessions', authenticateToken, async (req, res) => {
