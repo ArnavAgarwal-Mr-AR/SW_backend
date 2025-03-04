@@ -469,7 +469,7 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
     console.log('User ID:', req.user.id);
 
     const result = await pool.query(
-      'INSERT INTO sessions (room_id, host_id, title, time, guest) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      'INSERT INTO sessions (room_id, host_id, title, time_interval, guest) VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [roomId, req.user.id, title, '0 seconds', 0]
     );
 
@@ -480,6 +480,32 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Session creation error:', error);
     res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+// End a session (requires auth)
+app.post('/api/sessions/end', authenticateToken, async (req, res) => {
+  try {
+    const { roomId } = req.body;
+    const endTime = new Date();
+    const session = await pool.query('SELECT created_at FROM sessions WHERE room_id = $1', [roomId]);
+
+    if (session.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const createdAt = new Date(session.rows[0].created_at);
+    const timeInterval = endTime - createdAt;
+
+    await pool.query(
+      'UPDATE sessions SET status = $1, ended_at = $2, time_interval = $3 WHERE room_id = $4',
+      ['ended', endTime, timeInterval, roomId]
+    );
+
+    res.json({ message: 'Session ended successfully' });
+  } catch (error) {
+    console.error('Error ending session:', error);
+    res.status(500).json({ error: 'Failed to end session' });
   }
 });
 
