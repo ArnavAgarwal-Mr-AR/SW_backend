@@ -50,6 +50,7 @@ const io = new Server(server, {
       'http://localhost:5173',
       'http://192.168.1.100:5173',
       'https://sw-frontend-25jq.onrender.com',
+      'https://www.spinningwheel.app',
     ],
     methods: ['GET', 'POST'],
     credentials: true,
