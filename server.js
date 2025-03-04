@@ -36,6 +36,7 @@ app.use(
       'http://localhost:5173',
       'http://192.168.1.100:5173',
       'https://sw-frontend-25jq.onrender.com',
+      'https://www.spinningwheel.app',
     ],
     credentials: true,
   })
