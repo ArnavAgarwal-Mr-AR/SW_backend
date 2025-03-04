@@ -460,7 +460,6 @@ app.post('/api/changePassword', authenticateToken, async (req, res) => {
 });
 
 // Create a session (requires auth)
-// Create a session (requires auth)
 app.post('/api/sessions', authenticateToken, async (req, res) => {
   try {
     const { title } = req.body;
@@ -470,8 +469,8 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
     console.log('User ID:', req.user.id);
 
     const result = await pool.query(
-      'INSERT INTO sessions (room_id, host_id, title) VALUES ($1, $2, $3) RETURNING *',
-      [roomId, req.user.id, title]
+      'INSERT INTO sessions (room_id, host_id, title, time, guest) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [roomId, req.user.id, title, '0 seconds', 0]
     );
 
     res.status(201).json({
