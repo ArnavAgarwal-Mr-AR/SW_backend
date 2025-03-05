@@ -549,6 +549,29 @@ app.post('/upload', upload.single('video'), async (req, res) => {
   }
 });
 
+//joining with invite key
+app.post('/join-session', async (req, res) => {
+    const inviteKey = req.body.inviteKey; // Ensure this is a string
+    try {
+        // Assuming you have a function to check the invite key
+        const result = await pool.query(
+            'SELECT * FROM sessions WHERE invite_key = $1', 
+            [inviteKey] // Pass inviteKey as a string
+        );
+
+        if (result.rows.length > 0) {
+            // Handle successful invite key match
+            res.status(200).send('Invite key is valid');
+        } else {
+            // Handle invalid invite key
+            res.status(400).send('Invalid invite key');
+        }
+    } catch (error) {
+        console.error('Error updating participant status:', error);
+        res.status(500).send('Internal server error');
+    }
+}); 
+
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));
 
