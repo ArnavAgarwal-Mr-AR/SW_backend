@@ -549,28 +549,27 @@ app.post('/upload', upload.single('video'), async (req, res) => {
   }
 });
 
-//joining with invite key
-app.post('/join-session', async (req, res) => {
-    const inviteKey = req.body.inviteKey; // Ensure this is a string
-    try {
-        // Assuming you have a function to check the invite key
-        const result = await pool.query(
-            'SELECT * FROM sessions WHERE invite_key = $1', 
-            [inviteKey] // Pass inviteKey as a string
-        );
+// Add this function to find a session by invite key
+async function findSessionByInviteKey(inviteKey) {
+    const result = await pool.query('SELECT * FROM sessions WHERE room_id = $1', [inviteKey]);
+    return result.rows[0];
+}
 
-        if (result.rows.length > 0) {
-            // Handle successful invite key match
-            res.status(200).send('Invite key is valid');
+// Update the /join-session endpoint
+app.post('/join-session', async (req, res) => {
+    const { inviteKey } = req.body;
+    try {
+        const session = await findSessionByInviteKey(inviteKey);
+        if (session) {
+            res.json({ success: true, sessionId: session.room_id });
         } else {
-            // Handle invalid invite key
-            res.status(400).send('Invalid invite key');
+            res.json({ success: false });
         }
     } catch (error) {
-        console.error('Error updating participant status:', error);
-        res.status(500).send('Internal server error');
+        console.error('Error joining session:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
-}); 
+});
 
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));
