@@ -152,7 +152,7 @@ await pool.query(
     io.to(roomId).emit('recording-stopped', { roomId });
   });
 
-  });
+ 
 
   // WebRTC signaling
   socket.on('offer', ({ offer, roomId, targetId }) => {
