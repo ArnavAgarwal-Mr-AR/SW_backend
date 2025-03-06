@@ -124,6 +124,25 @@ io.on('connection', (socket) => {
       console.error('Join room error:', error);
       socket.emit('error', { message: 'Failed to join room' });
     }
+    
+    // Start Recording
+  socket.on('start-recording', async ({ roomId }) => {
+    if (!rooms.has(roomId)) return;
+    
+    rooms.get(roomId).recording = true;
+    rooms.get(roomId).recordingStartTime = Date.now();
+    
+    io.to(roomId).emit('recording-started', { roomId });
+  });
+
+  // Stop Recording
+  socket.on('stop-recording', async ({ roomId }) => {
+    if (!rooms.has(roomId)) return;
+
+    rooms.get(roomId).recording = false;
+    io.to(roomId).emit('recording-stopped', { roomId });
+  });
+
   });
 
   // WebRTC signaling
@@ -146,6 +165,18 @@ io.on('connection', (socket) => {
       candidate,
       senderId: socket.id,
     });
+  });
+  // Active Speaker Detection
+  socket.on('audio-level', ({ roomId, userId, level }) => {
+    // Store the active speaker based on audio level
+      if (!rooms.has(roomId)) return;
+
+      const currentActiveSpeaker = rooms.get(roomId).activeSpeaker;
+    
+      if (!currentActiveSpeaker || currentActiveSpeaker.userId !== userId) {
+          rooms.get(roomId).activeSpeaker = { userId, level };
+          io.to(roomId).emit('active-speaker', { userId });
+      }
   });
 
   // Disconnection
@@ -548,6 +579,44 @@ app.post('/upload', upload.single('video'), async (req, res) => {
     res.status(500).json({ error: 'Upload failed' });
   }
 });
+
+app.post('/api/process-recording', async (req, res) => {
+    try {
+        const { sessionId } = req.body;
+
+        // Fetch recordings from DB
+        const result = await pool.query(
+            'SELECT file_name FROM recordings WHERE session_id = $1 ORDER BY created_at ASC',
+            [sessionId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'No recordings found' });
+        }
+
+        // Generate FFmpeg merge command
+        const files = result.rows.map(row => `file 'uploads/${row.file_name}'`).join('\n');
+        const fileListPath = `uploads/${sessionId}_filelist.txt`;
+        fs.writeFileSync(fileListPath, files);
+
+        const outputFilePath = `uploads/${sessionId}_final.mp4`;
+        const ffmpegCmd = `ffmpeg -f concat -safe 0 -i ${fileListPath} -c copy ${outputFilePath}`;
+
+        require('child_process').exec(ffmpegCmd, (error, stdout, stderr) => {
+            if (error) {
+                console.error('FFmpeg error:', error);
+                return res.status(500).json({ error: 'Merging failed' });
+            }
+
+            res.json({ success: true, finalRecording: outputFilePath });
+        });
+
+    } catch (error) {
+        console.error('Processing error:', error);
+        res.status(500).json({ error: 'Failed to process recording' });
+    }
+});
+
 
 // Add this function to find a session by invite key
 async function findSessionByInviteKey(inviteKey) {
