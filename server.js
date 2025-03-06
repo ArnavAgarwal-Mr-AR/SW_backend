@@ -104,6 +104,8 @@ if (socket.user.is_new_user) {
     [session.rows[0].session_id, session.rows[0].host_id, socket.user.id]
   );
 }
+
+  res.json({ success: true, sessionId: session.rows[0].session_id });
       // Join socket.io room
       socket.join(roomId);
       // Track in memory
@@ -132,7 +134,6 @@ await pool.query(
 );
       socket.emit('error', { message: 'Failed to join room' });
 
-    
     // Start Recording
   socket.on('start-recording', async ({ roomId }) => {
     if (!rooms.has(roomId)) return;
