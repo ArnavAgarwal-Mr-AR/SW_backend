@@ -84,19 +84,13 @@ io.on('connection', (socket) => {
 
   // Join room
   socket.on('join-room', async (roomId) => {
-    try {
-      let session;
+    let session = null;
 try {
   session = await pool.query('SELECT * FROM sessions WHERE invite_key = $1', [roomId]);
 
   if (session.rows.length === 0) {
     throw new Error('Session not found or expired');
   }
-} catch (error) {
-  console.error('Database query error:', error.message);
-  return socket.emit('error', { message: 'Session not found or expired' });
-}
-
 // Add participant to the session
 await pool.query(
   'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
@@ -114,7 +108,6 @@ if (req.user.is_new_user) {
 res.json({ success: true, sessionId: session.rows[0].session_id });
       // Join socket.io room
       socket.join(roomId);
-
       // Track in memory
       if (!rooms.has(roomId)) {
         rooms.set(roomId, new Set());
@@ -134,11 +127,11 @@ res.json({ success: true, sessionId: session.rows[0].session_id });
       io.to(roomId).emit('participant-count', rooms.get(roomId).size);
     } catch (error) {
       const sessionId = session && session.rows.length ? session.rows[0].session_id : null;
+      console.error('Join-room error:', error.message);
 await pool.query(
   'INSERT INTO error_logs (session_id, user_id, error_type, error_message, error_time) VALUES ($1, $2, $3, $4, NOW())',
-  [sessionId, req.user ? req.user.id : null, 'join_failed', error.message]
+  [sessionId, socket.user ? socket.user.id : null, 'join_failed', error.message]
 );
-
       socket.emit('error', { message: 'Failed to join room' });
     }
     
