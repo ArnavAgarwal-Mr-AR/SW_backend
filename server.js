@@ -87,7 +87,7 @@ io.on('connection', (socket) => {
     try {
       let session;
 try {
-  session = await pool.query('SELECT * FROM sessions WHERE invite_key = $1', [inviteKey]);
+  session = await pool.query('SELECT * FROM sessions WHERE invite_key = $1', [roomId]);
 
   if (session.rows.length === 0) {
     throw new Error('Session not found or expired');
@@ -100,14 +100,14 @@ try {
 // Add participant to the session
 await pool.query(
   'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
-  [session.rows[0].session_id, req.user.id]
+  [session.rows[0].session_id, socket.user.id]
 );
 
 // Track new user joins via invite link
 if (req.user.is_new_user) {
   await pool.query(
     'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
-    [session.rows[0].session_id, session.rows[0].host_id, req.user.id]
+    [session.rows[0].session_id, session.rows[0].host_id, socket.user.id]
   );
 }
 
@@ -438,7 +438,7 @@ app.post('/api/updateName', authenticateToken, async (req, res) => {
     }
 
     const result = await pool.query(
-      'UPDATE users SET name = $1 WHERE id = $2 RETURNING id, name, email',
+      'UPDATE users SET username = $1 WHERE user_id = $2 RETURNING user_id, name, email',
       [name, req.user.id]
     );
 
@@ -532,7 +532,7 @@ app.post('/api/sessions/end', authenticateToken, async (req, res) => {
 
     await pool.query(
   'UPDATE sessions SET end_time = NOW() WHERE session_id = $1',
-  [sessionId]
+  [roomId]
 );
 
     res.json({ message: 'Session ended successfully' });
@@ -595,7 +595,7 @@ app.post('/api/process-recording', async (req, res) => {
         }
 
         // Generate FFmpeg merge command
-        const files = result.rows.map(row => `file 'uploads/${row.file_name}'`).join('\n');
+        const files = result.rows.map(row => `file 'uploads/${row.file_url}'`).join('\n');
         const fileListPath = `uploads/${sessionId}_filelist.txt`;
         fs.writeFileSync(fileListPath, files);
 
@@ -620,17 +620,17 @@ app.post('/api/process-recording', async (req, res) => {
 
 // Add this function to find a session by invite key
 async function findSessionByInviteKey(inviteKey) {
-    const result = await pool.query('SELECT * FROM sessions WHERE room_id = $1', [inviteKey]);
+    const result = await pool.query('SELECT * FROM sessions WHERE room_id = $1', [roomId]);
     return result.rows[0];
 }
 
 // Update the /join-session endpoint
-app.post('/join-session', async (req, res) => {
+app.post('/join-session', authenticateToken, async (req, res) => {
   const { inviteKey } = req.body;
   try {
     const session = await pool.query(
   'SELECT * FROM sessions WHERE invite_key = $1 AND end_time IS NULL',
-  [inviteKey]
+  [roomId]
 );
 
 if (session.rows.length === 0) {
@@ -640,7 +640,7 @@ if (session.rows.length === 0) {
 // Add participant to session
 await pool.query(
   'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
-  [session.rows[0].session_id, req.user.id]
+  [session.rows[0].session_id, socket.user.id]
 );
 
 // Track invite-based user registration
@@ -656,8 +656,7 @@ if (existingInvite.rows.length === 0) {
   );
 }
 
-res.json({ success: true, sessionId: session.rows[0].session_id });
-
+socket.emit('join-success', { success: true, sessionId: session.rows[0].session_id });
 
     if (session.rows.length > 0) {
       res.json({ success: true, sessionId: session.rows[0].room_id });
