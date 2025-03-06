@@ -131,8 +131,7 @@ await pool.query(
   [sessionId, socket.user ? socket.user.id : null, 'join_failed', error.message]
 );
       socket.emit('error', { message: 'Failed to join room' });
-    }
-  });
+
     
     // Start Recording
   socket.on('start-recording', async ({ roomId }) => {
