@@ -85,26 +85,27 @@ io.on('connection', (socket) => {
   // Join room
   socket.on('join-room', async (roomId) => {
     try {
-      const session = await pool.query('SELECT * FROM sessions WHERE room_id = $1', [
-        roomId,
-      ]);
+      const session = await pool.query('SELECT * FROM sessions WHERE invite_key = $1', [inviteKey]);
 
-      if (session.rows.length === 0) {
-        socket.emit('error', { message: 'Session not found' });
-        return;
-      }
+if (session.rows.length === 0) {
+  return res.status(404).json({ success: false, message: 'Session not found or expired' });
+}
 
-      // Record participant in DB
-      if (!isNaN(socket.user.id)) { // Insert only if user_id is an integer
-        await pool.query(
-      'INSERT INTO participants (session_id, user_id) VALUES ($1, $2)',
-      [session.rows[0].id, socket.user.id]
-    );
-    } else {
-      console.warn(`Skipping participant insert for guest user: ${socket.user.id}`);
-    }
+// Add participant to the session
+await pool.query(
+  'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
+  [session.rows[0].session_id, req.user.id]
+);
 
+// Track new user joins via invite link
+if (req.user.is_new_user) {
+  await pool.query(
+    'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
+    [session.rows[0].session_id, session.rows[0].host_id, req.user.id]
+  );
+}
 
+res.json({ success: true, sessionId: session.rows[0].session_id });
       // Join socket.io room
       socket.join(roomId);
 
@@ -126,7 +127,11 @@ io.on('connection', (socket) => {
       // Update participant count
       io.to(roomId).emit('participant-count', rooms.get(roomId).size);
     } catch (error) {
-      console.error('Join room error:', error);
+      await pool.query(
+  'INSERT INTO error_logs (session_id, user_id, error_type, error_message) VALUES ($1, $2, $3, $4)',
+  [session.rows.length ? session.rows[0].session_id : null, req.user.id, 'join_failed', error.message]
+);
+
       socket.emit('error', { message: 'Failed to join room' });
     }
     
@@ -191,9 +196,9 @@ io.on('connection', (socket) => {
       // Mark participant left in DB
       if (!isNaN(socket.user.id)) { // Ensure user_id is an integer
         await pool.query(
-        'UPDATE participants SET left_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND left_at IS NULL',
-    [socket.user.id]
-      );
+  'UPDATE participants SET leave_time = NOW() WHERE user_id = $1 AND leave_time IS NULL',
+  [socket.user.id]
+);
     } else {
       console.warn(`Skipping participant update for guest user: ${socket.user.id}`);
       }
@@ -511,8 +516,8 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
     console.log('User ID:', req.user.id);
 
     const result = await pool.query(
-      'INSERT INTO sessions (room_id, host_id, title, time_interval, guest) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [roomId, req.user.id, title, '0 seconds', 0]
+      'INSERT INTO sessions (host_id, invite_key, start_time) VALUES ($1, $2, NOW()) RETURNING *',
+  [req.user.id, nanoid()]
     );
 
     res.status(201).json({
@@ -540,9 +545,9 @@ app.post('/api/sessions/end', authenticateToken, async (req, res) => {
     const timeInterval = endTime - createdAt;
 
     await pool.query(
-      'UPDATE sessions SET status = $1, ended_at = $2, time_interval = $3 WHERE room_id = $4',
-      ['ended', endTime, timeInterval, roomId]
-    );
+  'UPDATE sessions SET end_time = NOW() WHERE session_id = $1',
+  [sessionId]
+);
 
     res.json({ message: 'Session ended successfully' });
   } catch (error) {
@@ -578,9 +583,9 @@ app.post('/upload', upload.single('video'), async (req, res) => {
     const { filename } = req.file;
 
     const result = await pool.query(
-      'INSERT INTO recordings (session_id, user_id, file_name) VALUES ($1, $2, $3) RETURNING *',
-      [sessionId, userId, filename]
-    );
+  'INSERT INTO recordings (session_id, recorded_by, file_url, status) VALUES ($1, $2, $3, $4) RETURNING *',
+  [sessionId, userId, filename, 'processing']
+);
 
     res.status(200).json(result.rows[0]);
   } catch (error) {
