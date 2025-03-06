@@ -497,15 +497,15 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
   try {
     const { title } = req.body;
     const roomId = nanoid();
-
+    
     console.log('Creating session with title:', title);
     console.log('User ID:', req.user.id);
 
     const result = await pool.query(
-      'INSERT INTO sessions (host_id, invite_key, start_time) VALUES ($1, $2, NOW()) RETURNING *',
-  [req.user.id, nanoid()]
+      `INSERT INTO sessions (host_id, invite_key, start_time) VALUES ($1, $2, NOW()) RETURNING *`,
+      [req.user.id, roomId]
     );
-
+    console.log(`Session created successfully:`, result.rows[0]);
     res.status(201).json({
       ...result.rows[0],
       inviteKey: roomId, // Return the invite key
