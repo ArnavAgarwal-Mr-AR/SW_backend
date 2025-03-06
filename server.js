@@ -626,19 +626,24 @@ async function findSessionByInviteKey(inviteKey) {
 
 // Update the /join-session endpoint
 app.post('/join-session', async (req, res) => {
-    const { inviteKey } = req.body;
-    try {
-        const session = await findSessionByInviteKey(inviteKey);
-        if (session) {
-            res.json({ success: true, sessionId: session.room_id });
-        } else {
-            res.json({ success: false });
-        }
-    } catch (error) {
-        console.error('Error joining session:', error);
-        res.status(500).json({ error: 'Internal server error' });
+  const { inviteKey } = req.body;
+  try {
+    const session = await pool.query(
+      'SELECT * FROM sessions WHERE room_id = $1 AND status = $2',
+      [inviteKey, 'active']
+    );
+
+    if (session.rows.length > 0) {
+      res.json({ success: true, sessionId: session.rows[0].room_id });
+    } else {
+      res.status(404).json({ success: false, message: 'Session not found or expired' });
     }
+  } catch (error) {
+    console.error('Error joining session:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
+
 
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));
