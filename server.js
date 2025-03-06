@@ -95,10 +95,15 @@ io.on('connection', (socket) => {
       }
 
       // Record participant in DB
-      await pool.query(
-        'INSERT INTO participants (session_id, user_id) VALUES ($1, $2)',
-        [session.rows[0].id, socket.user.id]
-      );
+      if (!isNaN(socket.user.id)) { // Insert only if user_id is an integer
+        await pool.query(
+      'INSERT INTO participants (session_id, user_id) VALUES ($1, $2)',
+      [session.rows[0].id, socket.user.id]
+    );
+    } else {
+      console.warn(`Skipping participant insert for guest user: ${socket.user.id}`);
+    }
+
 
       // Join socket.io room
       socket.join(roomId);
@@ -184,10 +189,14 @@ io.on('connection', (socket) => {
     console.log('User disconnected:', socket.id);
     try {
       // Mark participant left in DB
-      await pool.query(
+      if (!isNaN(socket.user.id)) { // Ensure user_id is an integer
+        await pool.query(
         'UPDATE participants SET left_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND left_at IS NULL',
-        [socket.user.id]
+    [socket.user.id]
       );
+    } else {
+      console.warn(`Skipping participant update for guest user: ${socket.user.id}`);
+      }
 
       // Remove from memory store
       rooms.forEach((participants, roomId) => {
