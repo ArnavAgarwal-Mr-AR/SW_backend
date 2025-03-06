@@ -128,9 +128,10 @@ res.json({ success: true, sessionId: session.rows[0].session_id });
       io.to(roomId).emit('participant-count', rooms.get(roomId).size);
     } catch (error) {
       await pool.query(
-  'INSERT INTO error_logs (session_id, user_id, error_type, error_message) VALUES ($1, $2, $3, $4)',
+  'INSERT INTO error_logs (session_id, user_id, error_type, error_message, error_time) VALUES ($1, $2, $3, $4, NOW())',
   [session.rows.length ? session.rows[0].session_id : null, req.user.id, 'join_failed', error.message]
 );
+
 
       socket.emit('error', { message: 'Failed to join room' });
     }
@@ -332,30 +333,6 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Test register endpoint
-app.post('/api/test-register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const result = await pool.query(
-      'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email',
-      [name, email, hashedPassword]
-    );
-
-    res.status(201).json({
-      success: true,
-      user: result.rows[0],
-    });
-  } catch (error) {
-    console.error('Test registration error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
 // Register
 app.post('/api/register', async (req, res) => {
   try {
@@ -372,9 +349,10 @@ app.post('/api/register', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email',
-      [name, email, hashedPassword]
+      'INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING user_id, username, email',
+       [name, email, hashedPassword, 'guest']
     );
+
 
     const token = jwt.sign(
       { id: result.rows[0].id, email },
@@ -421,20 +399,22 @@ app.post('/api/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
+  { id: user.user_id, email: user.email, role: user.role },
+  process.env.JWT_SECRET,
+  { expiresIn: '24h' }
+);
 
-    return res.status(200).json({
-      success: true,
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-      },
-    });
+return res.status(200).json({
+  success: true,
+  token,
+  user: {
+    id: user.user_id,
+    name: user.username,  // Keep 'name' for frontend compatibility
+    email: user.email,
+    role: user.role,
+  },
+});
+
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({
@@ -600,8 +580,8 @@ app.post('/api/process-recording', async (req, res) => {
 
         // Fetch recordings from DB
         const result = await pool.query(
-            'SELECT file_name FROM recordings WHERE session_id = $1 ORDER BY created_at ASC',
-            [sessionId]
+        'SELECT file_url FROM recordings WHERE session_id = $1 ORDER BY created_at ASC',
+        [sessionId]
         );
 
         if (result.rows.length === 0) {
@@ -643,9 +623,35 @@ app.post('/join-session', async (req, res) => {
   const { inviteKey } = req.body;
   try {
     const session = await pool.query(
-      'SELECT * FROM sessions WHERE room_id = $1 AND status = $2',
-      [inviteKey, 'active']
-    );
+  'SELECT * FROM sessions WHERE invite_key = $1 AND end_time IS NULL',
+  [inviteKey]
+);
+
+if (session.rows.length === 0) {
+  return res.status(404).json({ success: false, message: 'Session not found or expired' });
+}
+
+// Add participant to session
+await pool.query(
+  'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
+  [session.rows[0].session_id, req.user.id]
+);
+
+// Track invite-based user registration
+const existingInvite = await pool.query(
+  'SELECT * FROM invite_tracking WHERE invited_user_id = $1',
+  [req.user.id]
+);
+
+if (existingInvite.rows.length === 0) {
+  await pool.query(
+    'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
+    [session.rows[0].session_id, session.rows[0].host_id, req.user.id]
+  );
+}
+
+res.json({ success: true, sessionId: session.rows[0].session_id });
+
 
     if (session.rows.length > 0) {
       res.json({ success: true, sessionId: session.rows[0].room_id });
