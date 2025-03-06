@@ -98,14 +98,12 @@ await pool.query(
 );
 
 // Track new user joins via invite link
-if (req.user.is_new_user) {
+if (socket.user.is_new_user) {
   await pool.query(
     'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
     [session.rows[0].session_id, session.rows[0].host_id, socket.user.id]
   );
 }
-
-res.json({ success: true, sessionId: session.rows[0].session_id });
       // Join socket.io room
       socket.join(roomId);
       // Track in memory
@@ -134,6 +132,7 @@ await pool.query(
 );
       socket.emit('error', { message: 'Failed to join room' });
     }
+  });
     
     // Start Recording
   socket.on('start-recording', async ({ roomId }) => {
