@@ -19,10 +19,7 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const nanoid = customAlphabet(
-  '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
-  20
-);
+const nanoid = customAlphabet('1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',20);
 
 // -----------------------------
 // 1) MIDDLEWARE
@@ -85,27 +82,27 @@ io.on('connection', (socket) => {
   // Join room
   socket.on('join-room', async (roomId) => {
     let session = null;
-try {
-  session = await pool.query('SELECT * FROM sessions WHERE invite_key = $1', [roomId]);
+    try {
+      session = await pool.query('SELECT * FROM sessions WHERE invite_key = $1', [roomId]);
 
-  if (session.rows.length === 0) {
-    throw new Error('Session not found or expired');
-  }
-// Add participant to the session
-await pool.query(
-  'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
-  [session.rows[0].session_id, socket.user.id]
-);
+      if (session.rows.length === 0) {
+        throw new Error('Session not found or expired');
+      }
+      // Add participant to the session
+      await pool.query(
+        'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
+        [session.rows[0].session_id, socket.user.id]
+      );
 
-// Track new user joins via invite link
-if (socket.user.is_new_user) {
-  await pool.query(
-    'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
-    [session.rows[0].session_id, session.rows[0].host_id, socket.user.id]
-  );
-}
+      // Track new user joins via invite link
+      if (socket.user.is_new_user) {
+        await pool.query(
+          'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
+          [session.rows[0].session_id, session.rows[0].host_id, socket.user.id]
+        );
+      }
 
-  res.json({ success: true, sessionId: session.rows[0].session_id });
+      res.json({ success: true, sessionId: session.rows[0].session_id });
       // Join socket.io room
       socket.join(roomId);
       // Track in memory
@@ -128,13 +125,15 @@ if (socket.user.is_new_user) {
     } catch (error) {
       const sessionId = session && session.rows.length ? session.rows[0].session_id : null;
       console.error('Join-room error:', error.message);
-await pool.query(
-  'INSERT INTO error_logs (session_id, user_id, error_type, error_message, error_time) VALUES ($1, $2, $3, $4, NOW())',
-  [sessionId, socket.user ? socket.user.id : null, 'join_failed', error.message]
-);
+      await pool.query(
+        'INSERT INTO error_logs (session_id, user_id, error_type, error_message, error_time) VALUES ($1, $2, $3, $4, NOW())',
+        [sessionId, socket.user ? socket.user.id : null, 'join_failed', error.message]
+      );
       socket.emit('error', { message: 'Failed to join room' });
+    }
+  });
 
-    // Start Recording
+  // Start Recording
   socket.on('start-recording', async ({ roomId }) => {
     if (!rooms.has(roomId)) return;
     
@@ -151,8 +150,6 @@ await pool.query(
     rooms.get(roomId).recording = false;
     io.to(roomId).emit('recording-stopped', { roomId });
   });
-
- 
 
   // WebRTC signaling
   socket.on('offer', ({ offer, roomId, targetId }) => {
@@ -178,14 +175,14 @@ await pool.query(
   // Active Speaker Detection
   socket.on('audio-level', ({ roomId, userId, level }) => {
     // Store the active speaker based on audio level
-      if (!rooms.has(roomId)) return;
+    if (!rooms.has(roomId)) return;
 
-      const currentActiveSpeaker = rooms.get(roomId).activeSpeaker;
+    const currentActiveSpeaker = rooms.get(roomId).activeSpeaker;
     
-      if (!currentActiveSpeaker || currentActiveSpeaker.userId !== userId) {
-          rooms.get(roomId).activeSpeaker = { userId, level };
-          io.to(roomId).emit('active-speaker', { userId });
-      }
+    if (!currentActiveSpeaker || currentActiveSpeaker.userId !== userId) {
+      rooms.get(roomId).activeSpeaker = { userId, level };
+      io.to(roomId).emit('active-speaker', { userId });
+    }
   });
 
   // Disconnection
@@ -195,11 +192,11 @@ await pool.query(
       // Mark participant left in DB
       if (!isNaN(socket.user.id)) { // Ensure user_id is an integer
         await pool.query(
-  'UPDATE participants SET leave_time = NOW() WHERE user_id = $1 AND leave_time IS NULL',
-  [socket.user.id]
-);
-    } else {
-      console.warn(`Skipping participant update for guest user: ${socket.user.id}`);
+          'UPDATE participants SET leave_time = NOW() WHERE user_id = $1 AND leave_time IS NULL',
+          [socket.user.id]
+        );
+      } else {
+        console.warn(`Skipping participant update for guest user: ${socket.user.id}`);
       }
 
       // Remove from memory store
@@ -348,9 +345,8 @@ app.post('/api/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING user_id, username, email',
-       [name, email, hashedPassword, 'guest']
+      [name, email, hashedPassword, 'guest']
     );
-
 
     const token = jwt.sign(
       { id: result.rows[0].id, email },
@@ -397,22 +393,21 @@ app.post('/api/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-  { id: user.user_id, email: user.email, role: user.role },
-  process.env.JWT_SECRET,
-  { expiresIn: '24h' }
-);
+      { id: user.user_id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
-return res.status(200).json({
-  success: true,
-  token,
-  user: {
-    id: user.user_id,
-    name: user.username,  // Keep 'name' for frontend compatibility
-    email: user.email,
-    role: user.role,
-  },
-});
-
+    return res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: user.user_id,
+        name: user.username,  // Keep 'name' for frontend compatibility
+        email: user.email,
+        role: user.role,
+      },
+    });
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({
@@ -421,6 +416,7 @@ return res.status(200).json({
     });
   }
 });
+
 // Update user name (requires auth)
 app.post('/api/updateName', authenticateToken, async (req, res) => {
   try {
@@ -523,9 +519,9 @@ app.post('/api/sessions/end', authenticateToken, async (req, res) => {
     const timeInterval = endTime - createdAt;
 
     await pool.query(
-  'UPDATE sessions SET end_time = NOW() WHERE session_id = $1',
-  [roomId]
-);
+      'UPDATE sessions SET end_time = NOW() WHERE session_id = $1',
+      [roomId]
+    );
 
     res.json({ message: 'Session ended successfully' });
   } catch (error) {
@@ -561,9 +557,9 @@ app.post('/upload', upload.single('video'), async (req, res) => {
     const { filename } = req.file;
 
     const result = await pool.query(
-  'INSERT INTO recordings (session_id, recorded_by, file_url, status) VALUES ($1, $2, $3, $4) RETURNING *',
-  [sessionId, userId, filename, 'processing']
-);
+      'INSERT INTO recordings (session_id, recorded_by, file_url, status) VALUES ($1, $2, $3, $4) RETURNING *',
+      [sessionId, userId, filename, 'processing']
+    );
 
     res.status(200).json(result.rows[0]);
   } catch (error) {
@@ -573,47 +569,46 @@ app.post('/upload', upload.single('video'), async (req, res) => {
 });
 
 app.post('/api/process-recording', async (req, res) => {
-    try {
-        const { sessionId } = req.body;
+  try {
+    const { sessionId } = req.body;
 
-        // Fetch recordings from DB
-        const result = await pool.query(
-        'SELECT file_url FROM recordings WHERE session_id = $1 ORDER BY created_at ASC',
-        [sessionId]
-        );
+    // Fetch recordings from DB
+    const result = await pool.query(
+      'SELECT file_url FROM recordings WHERE session_id = $1 ORDER BY created_at ASC',
+      [sessionId]
+    );
 
-        if (result.rows.length === 0) {
-            return res.status(400).json({ error: 'No recordings found' });
-        }
-
-        // Generate FFmpeg merge command
-        const files = result.rows.map(row => `file 'uploads/${row.file_url}'`).join('\n');
-        const fileListPath = `uploads/${sessionId}_filelist.txt`;
-        fs.writeFileSync(fileListPath, files);
-
-        const outputFilePath = `uploads/${sessionId}_final.mp4`;
-        const ffmpegCmd = `ffmpeg -f concat -safe 0 -i ${fileListPath} -c copy ${outputFilePath}`;
-
-        require('child_process').exec(ffmpegCmd, (error, stdout, stderr) => {
-            if (error) {
-                console.error('FFmpeg error:', error);
-                return res.status(500).json({ error: 'Merging failed' });
-            }
-
-            res.json({ success: true, finalRecording: outputFilePath });
-        });
-
-    } catch (error) {
-        console.error('Processing error:', error);
-        res.status(500).json({ error: 'Failed to process recording' });
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'No recordings found' });
     }
-});
 
+    // Generate FFmpeg merge command
+    const files = result.rows.map(row => `file 'uploads/${row.file_url}'`).join('\n');
+    const fileListPath = `uploads/${sessionId}_filelist.txt`;
+    fs.writeFileSync(fileListPath, files);
+
+    const outputFilePath = `uploads/${sessionId}_final.mp4`;
+    const ffmpegCmd = `ffmpeg -f concat -safe 0 -i ${fileListPath} -c copy ${outputFilePath}`;
+
+    require('child_process').exec(ffmpegCmd, (error, stdout, stderr) => {
+      if (error) {
+        console.error('FFmpeg error:', error);
+        return res.status(500).json({ error: 'Merging failed' });
+      }
+
+      res.json({ success: true, finalRecording: outputFilePath });
+    });
+
+  } catch (error) {
+    console.error('Processing error:', error);
+    res.status(500).json({ error: 'Failed to process recording' });
+  }
+});
 
 // Add this function to find a session by invite key
 async function findSessionByInviteKey(inviteKey) {
-    const result = await pool.query('SELECT * FROM sessions WHERE room_id = $1', [roomId]);
-    return result.rows[0];
+  const result = await pool.query('SELECT * FROM sessions WHERE room_id = $1', [inviteKey]);
+  return result.rows[0];
 }
 
 // Update the /join-session endpoint
@@ -621,46 +616,39 @@ app.post('/join-session', authenticateToken, async (req, res) => {
   const { inviteKey } = req.body;
   try {
     const session = await pool.query(
-  'SELECT * FROM sessions WHERE invite_key = $1 AND end_time IS NULL',
-  [roomId]
-);
+      'SELECT * FROM sessions WHERE invite_key = $1 AND end_time IS NULL',
+      [inviteKey]
+    );
 
-if (session.rows.length === 0) {
-  return res.status(404).json({ success: false, message: 'Session not found or expired' });
-}
-
-// Add participant to session
-await pool.query(
-  'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
-  [session.rows[0].session_id, socket.user.id]
-);
-
-// Track invite-based user registration
-const existingInvite = await pool.query(
-  'SELECT * FROM invite_tracking WHERE invited_user_id = $1',
-  [req.user.id]
-);
-
-if (existingInvite.rows.length === 0) {
-  await pool.query(
-    'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
-    [session.rows[0].session_id, session.rows[0].host_id, req.user.id]
-  );
-}
-
-socket.emit('join-success', { success: true, sessionId: session.rows[0].session_id });
-
-    if (session.rows.length > 0) {
-      res.json({ success: true, sessionId: session.rows[0].room_id });
-    } else {
-      res.status(404).json({ success: false, message: 'Session not found or expired' });
+    if (session.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Session not found or expired' });
     }
+
+    // Add participant to session
+    await pool.query(
+      'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
+      [session.rows[0].session_id, req.user.id]
+    );
+
+    // Track invite-based user registration
+    const existingInvite = await pool.query(
+      'SELECT * FROM invite_tracking WHERE invited_user_id = $1',
+      [req.user.id]
+    );
+
+    if (existingInvite.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
+        [session.rows[0].session_id, session.rows[0].host_id, req.user.id]
+      );
+    }
+
+    res.json({ success: true, sessionId: session.rows[0].room_id });
   } catch (error) {
     console.error('Error joining session:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
 
 // Serve uploaded files
 app.use('/uploads', express.static('uploads'));
