@@ -102,7 +102,7 @@ io.on('connection', (socket) => {
         );
       }
 
-      res.json({ success: true, sessionId: session.rows[0].session_id });
+      socket.emit({ success: true, sessionId: session.rows[0].session_id });
       // Join socket.io room
       socket.join(roomId);
       // Track in memory
@@ -509,13 +509,13 @@ app.post('/api/sessions/end', authenticateToken, async (req, res) => {
   try {
     const { roomId } = req.body;
     const endTime = new Date();
-    const session = await pool.query('SELECT created_at FROM sessions WHERE room_id = $1', [roomId]);
+    const session = await pool.query('SELECT start_time FROM sessions WHERE room_id = $1', [roomId]);
 
     if (session.rows.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    const createdAt = new Date(session.rows[0].created_at);
+    const createdAt = new Date(session.rows[0].start_time);
     const timeInterval = endTime - createdAt;
 
     await pool.query(
