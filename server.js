@@ -627,7 +627,7 @@ app.post('/join-session', authenticateToken, async (req, res) => {
     // Add participant to session
     await pool.query(
       'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
-      [session.rows[0].session_id, req.user.id]
+      [session.rows[0].session_id, socket.user.id]
     );
 
     // Track invite-based user registration
