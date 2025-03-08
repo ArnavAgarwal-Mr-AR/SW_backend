@@ -83,23 +83,28 @@ io.on('connection', (socket) => {
   socket.on('join-room', async (roomId) => {
     let session = null;
     try {
+      // Find session by invite key
       session = await pool.query('SELECT * FROM sessions WHERE invite_key = $1', [roomId]);
 
       if (session.rows.length === 0) {
         throw new Error('Session not found or expired');
       }
-      // Add participant to the session
-      await pool.query(
-        'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
-        [session.rows[0].session_id, socket.user.id]
-      );
 
-      // Track new user joins via invite link
-      if (socket.user.is_new_user) {
+      // Only add to participants table if this is not a guest user
+      if (socket.user && socket.user.id && !socket.user.id.toString().startsWith('guest-')) {
+        // Add participant to the session
         await pool.query(
-          'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
-          [session.rows[0].session_id, session.rows[0].host_id, socket.user.id]
+          'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
+          [session.rows[0].session_id, socket.user.id]
         );
+
+        // Track new user joins via invite link
+        if (socket.user.is_new_user) {
+          await pool.query(
+            'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
+            [session.rows[0].session_id, session.rows[0].host_id, socket.user.id]
+          );
+        }
       }
 
       socket.emit('joined-room', { success: true, sessionId: session.rows[0].session_id });
@@ -125,10 +130,22 @@ io.on('connection', (socket) => {
     } catch (error) {
       const sessionId = session && session.rows.length ? session.rows[0].session_id : null;
       console.error('Join-room error:', error.message);
-      await pool.query(
-        'INSERT INTO error_logs (session_id, user_id, error_type, error_message, error_time) VALUES ($1, $2, $3, $4, NOW())',
-        [sessionId, socket.user ? socket.user.id : null, 'join_failed', error.message]
-      );
+      // Only log to error_logs if session exists
+      if (sessionId) {
+        try {
+          await pool.query(
+            'INSERT INTO error_logs (session_id, user_id, error_type, error_message, error_time) VALUES ($1, $2, $3, $4, NOW())',
+            [
+              sessionId, 
+              socket.user && !socket.user.id.toString().startsWith('guest-') ? socket.user.id : null, 
+              'join_failed', 
+              error.message
+            ]
+          );
+        } catch (logError) {
+          console.error('Failed to log error:', logError);
+        }
+      }
       socket.emit('error', { message: 'Failed to join room' });
     }
   });
@@ -189,14 +206,15 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async () => {
     console.log('User disconnected:', socket.id);
     try {
-      // Mark participant left in DB
-      if (!isNaN(socket.user.id)) { // Ensure user_id is an integer
+      // Check if user is a guest or registered user
+      if (socket.user && socket.user.id && !socket.user.id.toString().startsWith('guest-')) {
+        // This is a registered user with numeric ID
         await pool.query(
           'UPDATE participants SET leave_time = NOW() WHERE user_id = $1 AND leave_time IS NULL',
           [socket.user.id]
         );
       } else {
-        console.warn(`Skipping participant update for guest user: ${socket.user.id}`);
+        console.log(`Guest user disconnected: ${socket.user ? socket.user.id : 'Unknown'}`);
       }
 
       // Remove from memory store
@@ -504,9 +522,9 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
     if (existingSession.rows.length > 0) {
       console.log("User already has an active session:", existingSession.rows[0]);
 
-      // End the existing session before creating a new one
+      // End the existing session without trying to set duration directly
       await pool.query(
-        'UPDATE sessions SET end_time = NOW(), duration = NOW() - start_time WHERE session_id = $1',
+        'UPDATE sessions SET end_time = NOW() WHERE session_id = $1',
         [existingSession.rows[0].session_id]
       );
 
@@ -518,7 +536,6 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
       'UPDATE users SET role = $1 WHERE user_id = $2',
       ['host', req.user.id]
     );
-    
     
     // Create new session
     const result = await pool.query(
@@ -540,16 +557,23 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
 app.post('/api/sessions/end', authenticateToken, async (req, res) => {
   try {
     const { roomId } = req.body;
-    const endTime = new Date();
-    const session = await pool.query('SELECT session_id FROM sessions WHERE invite_key = $1', [roomId]);
+    
+    // First, find the session by invite key
+    const session = await pool.query(
+      'SELECT session_id FROM sessions WHERE invite_key = $1', 
+      [roomId]
+    );
 
     if (session.rows.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
     }
-    const sessionId = session.rows[0].session_id;
-    await pool.query('UPDATE sessions SET end_time = NOW() WHERE session_id = $1', [sessionId]);
-    const createdAt = new Date(session.rows[0].start_time);
-    const timeInterval = endTime - createdAt;
+    
+    // Just update the end_time - duration will be calculated automatically
+    await pool.query(
+      'UPDATE sessions SET end_time = NOW() WHERE session_id = $1', 
+      [session.rows[0].session_id]
+    );
+
     res.json({ message: 'Session ended successfully' });
   } catch (error) {
     console.error('Error ending session:', error);
@@ -639,7 +663,7 @@ async function findSessionByInviteKey(inviteKey) {
 }
 
 // Update the /join-session endpoint
-app.post('/join-session', authenticateToken, async (req, res) => {
+app.post('/api/join-session', authenticateToken, async (req, res) => {
   const { inviteKey } = req.body;
   console.log("Received Join Request for Invite Key:", inviteKey);
   try {
@@ -653,10 +677,10 @@ app.post('/join-session', authenticateToken, async (req, res) => {
       console.log("Session Not Found or Expired for Key:", inviteKey);
       return res.status(404).json({ success: false, message: 'Session not found or expired' });
     }
+    
     // Check if the session exists before adding participant
     const sessionId = session.rows[0].session_id;
     console.log("Valid Session Found - ID:", sessionId);
-
     
     // Add participant to session
     await pool.query(
@@ -665,20 +689,8 @@ app.post('/join-session', authenticateToken, async (req, res) => {
     );
     console.log(`User ${req.user.id} added as participant to session ${sessionId}`);
     
-    // Track invite-based user registration
-    const existingInvite = await pool.query(
-      'SELECT * FROM invite_tracking WHERE invited_user_id = $1',
-      [req.user.id]
-    );
-
-    if (existingInvite.rows.length === 0) {
-      await pool.query(
-        'INSERT INTO invite_tracking (session_id, referrer_user_id, invited_user_id, registered_at) VALUES ($1, $2, $3, NOW())',
-        [session.rows[0].session_id, session.rows[0].host_id, req.user.id]
-      );
-    }
-
-    res.json({ success: true, sessionId: session.rows[0].room_id });
+    // Return the invite key for the client to use with socket connection
+    res.json({ success: true, sessionId: session.rows[0].invite_key });
   } catch (error) {
     console.error('Error joining session:', error);
     res.status(500).json({ error: 'Internal server error' });
