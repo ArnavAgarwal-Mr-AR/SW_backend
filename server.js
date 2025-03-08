@@ -509,20 +509,15 @@ app.post('/api/sessions/end', authenticateToken, async (req, res) => {
   try {
     const { roomId } = req.body;
     const endTime = new Date();
-    const session = await pool.query('SELECT start_time FROM sessions WHERE invite_key = $1', [roomId]);
+    const session = await pool.query('SELECT session_id FROM sessions WHERE invite_key = $1', [roomId]);
 
     if (session.rows.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
     }
-
+    const sessionId = session.rows[0].session_id;
+    await pool.query('UPDATE sessions SET end_time = NOW() WHERE session_id = $1', [roomId]);
     const createdAt = new Date(session.rows[0].start_time);
     const timeInterval = endTime - createdAt;
-
-    await pool.query(
-      'UPDATE sessions SET end_time = NOW() WHERE session_id = $1',
-      [roomId]
-    );
-
     res.json({ message: 'Session ended successfully' });
   } catch (error) {
     console.error('Error ending session:', error);
