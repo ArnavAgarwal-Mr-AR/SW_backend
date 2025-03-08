@@ -149,7 +149,7 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: 'Failed to join room' });
     }
   });
-});
+
   // Start Recording
   socket.on('start-recording', async ({ roomId }) => {
     if (!rooms.has(roomId)) return;
@@ -210,7 +210,7 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('active-speaker', { userId });
     }
   });
-
+});
   // Disconnection
   socket.on('disconnect', async () => {
     console.log(`User disconnected: ${socket.id}`);
