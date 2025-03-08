@@ -213,35 +213,54 @@ io.on('connection', (socket) => {
 
   // Disconnection
   socket.on('disconnect', async () => {
-    console.log('User disconnected:', socket.id);
-    try {
-      // Check if user is a guest or registered user
-      if (socket.user && socket.user.id && !socket.user.id.toString().startsWith('guest-')) {
-        // This is a registered user with numeric ID
-        await pool.query(
-          'UPDATE participants SET leave_time = NOW() WHERE user_id = $1 AND leave_time IS NULL',
-          [socket.user.id]
-        );
-      } else {
-        console.log(`Guest user disconnected: ${socket.user ? socket.user.id : 'Unknown'}`);
-      }
+    console.log(`User disconnected: ${socket.id}`);
 
-      // Remove from memory store
-      rooms.forEach((participants, roomId) => {
-        if (participants.has(socket.id)) {
-          participants.delete(socket.id);
-          io.to(roomId).emit('user-disconnected', socket.id);
-          io.to(roomId).emit('participant-count', participants.size);
-          if (participants.size === 0) {
-            rooms.delete(roomId);
-          }
+    try {
+        if (socket.user && socket.user.id) {
+            if (!socket.user.id.toString().startsWith('guest-')) {
+                // This is a registered user with a numeric ID
+                const result = await pool.query(
+                    'UPDATE participants SET leave_time = NOW() WHERE user_id = $1 AND leave_time IS NULL RETURNING session_id',
+                    [socket.user.id]
+                );
+
+                if (result.rows.length > 0) {
+                    const sessionId = result.rows[0].session_id;
+                    console.log(`User ${socket.user.id} left session ${sessionId}`);
+                } else {
+                    console.log(`No active session found for user ${socket.user.id}`);
+                }
+            } else {
+                console.log(`Guest user disconnected: ${socket.user.id}`);
+            }
+        } else {
+            console.log(`Unknown user disconnected: ${socket.id}`);
         }
-      });
+
+        // Remove user from in-memory rooms tracking
+        rooms.forEach((participants, roomId) => {
+            if (participants.has(socket.id)) {
+                participants.delete(socket.id);
+
+                // Notify all clients in the room
+                io.to(roomId).emit('user-disconnected', socket.id);
+                io.to(roomId).emit('participant-count', participants.size);
+
+                console.log(`Updated participant count for room ${roomId}: ${participants.size}`);
+
+                // If no participants remain, clean up the room
+                if (participants.size === 0) {
+                    rooms.delete(roomId);
+                    console.log(`Room ${roomId} deleted from memory`);
+                }
+            }
+        });
+
     } catch (error) {
-      console.error('Error updating participant status:', error);
+        console.error('Error updating participant status:', error);
     }
-  });
 });
+
 
 // -----------------------------
 // 3) POSTGRES SETUP
