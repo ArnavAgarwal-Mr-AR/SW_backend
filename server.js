@@ -496,23 +496,29 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
     console.log('Creating session with title:', title);
     console.log('User ID:', req.user.id);
 
-    // Update the user role to host if creating a session
-    await pool.query(
-      'UPDATE users SET role = $1 WHERE user_id = $2',
-      ['host', req.user.id]
-    );
-    
-    // Check if the user already has an active session
+    // Check if user already has an active session
     const existingSession = await pool.query(
       'SELECT * FROM sessions WHERE host_id = $1 AND end_time IS NULL',
       [req.user.id]
     );
     if (existingSession.rows.length > 0) {
       console.log("User already has an active session:", existingSession.rows[0]);
-      return res.status(400).json({
-        error: "You already have an active session. Please end it before starting a new one."
-      });
+
+      // End the existing session before creating a new one
+      await pool.query(
+        'UPDATE sessions SET end_time = NOW(), duration = EXTRACT(EPOCH FROM (NOW() - start_time)) WHERE session_id = $1',
+        [existingSession.rows[0].session_id]
+      );
+
+      console.log(`Ended previous session: ${existingSession.rows[0].session_id}`);
     }
+    
+    // Update the user role to host if creating a session
+    await pool.query(
+      'UPDATE users SET role = $1 WHERE user_id = $2',
+      ['host', req.user.id]
+    );
+    
     
     // Create new session
     const result = await pool.query(
