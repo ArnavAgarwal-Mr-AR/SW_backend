@@ -170,6 +170,7 @@ io.on('connection', (socket) => {
 
   // WebRTC signaling
   socket.on('offer', ({ offer, roomId, targetId }) => {
+    console.log(`Relaying offer from ${socket.id} to ${targetId}`);
     socket.to(targetId).emit('offer', {
       offer,
       senderId: socket.id,
@@ -177,6 +178,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('answer', ({ answer, roomId, targetId }) => {
+    console.log(`Relaying answer from ${socket.id} to ${targetId}`);
     socket.to(targetId).emit('answer', {
       answer,
       senderId: socket.id,
@@ -184,11 +186,18 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ice-candidate', ({ candidate, roomId, targetId }) => {
+    console.log(`Relaying ICE candidate from ${socket.id} to ${targetId}`);
     socket.to(targetId).emit('ice-candidate', {
       candidate,
       senderId: socket.id,
     });
   });
+
+  socket.on('ready-to-connect', (roomId) => {
+    console.log(`User ${socket.id} is ready to connect in room ${roomId}`);
+    socket.to(roomId).emit('user-ready', socket.id);
+  });
+
   // Active Speaker Detection
   socket.on('audio-level', ({ roomId, userId, level }) => {
     // Store the active speaker based on audio level
