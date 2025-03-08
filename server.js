@@ -616,22 +616,29 @@ async function findSessionByInviteKey(inviteKey) {
 // Update the /join-session endpoint
 app.post('/join-session', authenticateToken, async (req, res) => {
   const { inviteKey } = req.body;
+  console.log("Received Join Request for Invite Key:", inviteKey);
   try {
     const session = await pool.query(
-      'SELECT * FROM sessions WHERE invite_key = $1 AND end_time IS NULL',
+      'SELECT * FROM sessions WHERE invite_key = $1 AND (end_time IS NULL OR end_time > NOW())',
       [inviteKey]
     );
-
+    console.log("Database Query Result:", session.rows);
     if (session.rows.length === 0) {
+      console.log("Session Not Found or Expired for Key:", inviteKey);
       return res.status(404).json({ success: false, message: 'Session not found or expired' });
     }
+    // Check if the session exists before adding participant
+    const sessionId = session.rows[0].session_id;
+    console.log("Valid Session Found - ID:", sessionId);
 
+    
     // Add participant to session
     await pool.query(
       'INSERT INTO participants (session_id, user_id, join_time) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING',
       [session.rows[0].session_id, req.user.id]
     );
-
+    console.log(`User ${req.user.id} added as participant to session ${sessionId}`);
+    
     // Track invite-based user registration
     const existingInvite = await pool.query(
       'SELECT * FROM invite_tracking WHERE invited_user_id = $1',
