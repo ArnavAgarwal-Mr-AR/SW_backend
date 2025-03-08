@@ -356,7 +356,7 @@ app.post('/api/register', async (req, res) => {
     );
 
     const token = jwt.sign(
-      { id: result.rows[0].id, email },
+      { id: result.rows[0].user_id, email, role: result.rows[0].role },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -496,6 +496,25 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
     console.log('Creating session with title:', title);
     console.log('User ID:', req.user.id);
 
+    // Update the user role to host if creating a session
+    await pool.query(
+      'UPDATE users SET role = $1 WHERE user_id = $2',
+      ['host', req.user.id]
+    );
+    
+    // Check if the user already has an active session
+    const existingSession = await pool.query(
+      'SELECT * FROM sessions WHERE host_id = $1 AND end_time IS NULL',
+      [req.user.id]
+    );
+    if (existingSession.rows.length > 0) {
+      console.log("User already has an active session:", existingSession.rows[0]);
+      return res.status(400).json({
+        error: "You already have an active session. Please end it before starting a new one."
+      });
+    }
+    
+    // Create new session
     const result = await pool.query(
       `INSERT INTO sessions (host_id, invite_key, start_time) VALUES ($1, $2, NOW()) RETURNING *`,
       [req.user.id, roomId]
@@ -623,6 +642,7 @@ app.post('/join-session', authenticateToken, async (req, res) => {
       [inviteKey]
     );
     console.log("Database Query Result:", session.rows);
+    
     if (session.rows.length === 0) {
       console.log("Session Not Found or Expired for Key:", inviteKey);
       return res.status(404).json({ success: false, message: 'Session not found or expired' });
