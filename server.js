@@ -506,7 +506,7 @@ app.post('/api/sessions', authenticateToken, async (req, res) => {
 
       // End the existing session before creating a new one
       await pool.query(
-        'UPDATE sessions SET end_time = NOW(), duration = EXTRACT(EPOCH FROM (NOW() - start_time)) WHERE session_id = $1',
+        'UPDATE sessions SET end_time = NOW(), duration = NOW() - start_time WHERE session_id = $1',
         [existingSession.rows[0].session_id]
       );
 
