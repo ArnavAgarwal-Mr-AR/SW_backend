@@ -102,7 +102,7 @@ io.on('connection', (socket) => {
         );
       }
 
-      socket.emit({ success: true, sessionId: session.rows[0].session_id });
+      socket.emit('joined-room', { success: true, sessionId: session.rows[0].session_id });
       // Join socket.io room
       socket.join(roomId);
       // Track in memory
@@ -273,11 +273,18 @@ if (!fs.existsSync('uploads')) {
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) return res.status(401).json({ error: 'Access denied' });
+  console.log("Incoming Auth Header:", authHeader);
+  if (!token) {
+    console.warn("Access denied: No token provided");
+    return res.status(401).json({ error: 'Access denied' });
+  }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      console.warn("Invalid Token:", token);
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    console.log("Authenticated User:", user);
     req.user = user;
     next();
   });
