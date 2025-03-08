@@ -210,7 +210,7 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('active-speaker', { userId });
     }
   });
-});
+
   // Disconnection
   socket.on('disconnect', async () => {
     console.log(`User disconnected: ${socket.id}`);
@@ -260,7 +260,7 @@ io.on('connection', (socket) => {
         console.error('Error updating participant status:', error);
     }
 });
-
+});
 
 // -----------------------------
 // 3) POSTGRES SETUP
