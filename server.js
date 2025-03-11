@@ -216,8 +216,9 @@ io.on('connection', (socket) => {
     console.log(`User disconnected: ${socket.id}`);
 
     try {
-        if (socket.user && socket.user.id) {
-            if (!socket.user.id.toString().startsWith('guest-')) {
+        if (socket.user && socket.user.id !== undefined) {
+            const userId = socket.user.id.toString();
+            if (!userId.startsWith('guest-')) {
                 // This is a registered user with a numeric ID
                 const result = await pool.query(
                     'UPDATE participants SET leave_time = NOW() WHERE user_id = $1 AND leave_time IS NULL RETURNING session_id',
@@ -241,7 +242,8 @@ io.on('connection', (socket) => {
         rooms.forEach((participants, roomId) => {
             if (participants.has(socket.id)) {
                 participants.delete(socket.id);
-
+                console.log(`Removed ${socket.id} from room ${roomId}`);
+              
                 // Notify all clients in the room
                 io.to(roomId).emit('user-disconnected', socket.id);
                 io.to(roomId).emit('participant-count', participants.size);
