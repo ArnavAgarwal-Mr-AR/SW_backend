@@ -13,6 +13,9 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { customAlphabet } = require('nanoid/non-secure');
 const cors = require('cors');
+const Redis = require("ioredis");
+const B2 = require('backblaze-b2');
+
 
 // Load environment variables from .env
 dotenv.config();
@@ -20,6 +23,12 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const nanoid = customAlphabet('1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',20);
+const redis = new Redis(process.env.REDIS_URL); 
+const b2 = new B2({
+  applicationKeyId: process.env.B2_APPLICATION_KEY_ID,
+  applicationKey: process.env.B2_APPLICATION_KEY,
+});
+
 
 // -----------------------------
 // 1) MIDDLEWARE
@@ -78,7 +87,10 @@ const rooms = new Map();
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
-
+  socket.on('message', async (data) => {
+    await redis.set(`message:${socket.id}`, data);
+    socket.broadcast.emit("message", data);
+  });
   // Join room
   socket.on('join-room', async (roomId) => {
     let session = null;
@@ -268,14 +280,10 @@ io.on('connection', (socket) => {
 // 3) POSTGRES SETUP
 // -----------------------------
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false, // Required for Neon.tech
+  },
 });
 
 // Test DB connection at startup
@@ -287,28 +295,25 @@ pool
   })
   .catch((err) => {
     console.error('Database connection error:', {
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      user: process.env.DB_USER,
-      database: process.env.DB_NAME,
       error: err.message,
     });
   });
 
 // -----------------------------
-// 4) MULTER FOR FILE UPLOADS
+// 4) Backblaze B2 FOR FILE UPLOADS
 // -----------------------------
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    // Ensure this directory exists
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
-    // Create a unique filename
-    cb(null, Date.now() + '-' + file.originalname);
-  },
-});
+const storage = multer.memoryStorage(); // Store file in memory (RAM)
 const upload = multer({ storage });
+
+async function uploadFile(fileBuffer, fileName) {
+  await b2.authorize();
+  const response = await b2.uploadFile({
+    bucketId: process.env.B2_BUCKET_ID,
+    fileName: fileName,
+    data: fileBuffer,
+  });
+  return response.data;
+}
 
 // Create 'uploads' dir if needed
 if (!fs.existsSync('uploads')) {
@@ -635,14 +640,29 @@ app.get('/api/sessions/:roomId', authenticateToken, async (req, res) => {
 app.post('/upload', upload.single('video'), async (req, res) => {
   try {
     const { sessionId, userId } = req.body;
-    const { filename } = req.file;
-
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    // Authorize with BackBlaze B2
+    await b2.authorize();
+    // Upload file to B2
+    const uploadUrl = await b2.getUploadUrl({ bucketId: process.env.B2_BUCKET_ID });
+    const response = await b2.uploadFile({
+      uploadUrl: uploadUrl.data.uploadUrl,
+      uploadAuthToken: uploadUrl.data.authorizationToken,
+      fileName: `recordings/${Date.now()}-${req.file.originalname}`, // Unique filename
+      data: req.file.buffer, // Use buffer since multer stores in memory
+      contentType: req.file.mimetype, // Preserve file type
+    });
+    // Get the public file URL
+    const fileUrl = `https://f000.backblazeb2.com/file/${process.env.B2_BUCKET_NAME}/${response.data.fileName}`;
+     // Save file URL to database
     const result = await pool.query(
       'INSERT INTO recordings (session_id, recorded_by, file_url, status) VALUES ($1, $2, $3, $4) RETURNING *',
-      [sessionId, userId, filename, 'processing']
+      [sessionId, userId, fileUrl, 'processing']
     );
 
-    res.status(200).json(result.rows[0]);
+    res.status(200).json({ success: true, fileUrl: fileUrl, recording: result.rows[0] });
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Upload failed' });
@@ -727,8 +747,6 @@ app.post('/api/join-session', authenticateToken, async (req, res) => {
   }
 });
 
-// Serve uploaded files
-app.use('/uploads', express.static('uploads'));
 
 // -----------------------------
 // 7) ERROR HANDLING MIDDLEWARE
@@ -750,8 +768,3 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 console.log('Starting server...');
-console.log('Environment variables:', {
-  PORT: process.env.PORT,
-  DB_HOST: process.env.DB_HOST,
-  NODE_ENV: process.env.NODE_ENV,
-});
