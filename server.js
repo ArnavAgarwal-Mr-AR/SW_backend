@@ -24,35 +24,6 @@ const app = express();
 const server = http.createServer(app);
 const nanoid = customAlphabet('1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',20);
 
-let redis = null;
-
-if (process.env.REDIS_URL) {
-  console.log("Initializing Redis...");
-  try {
-    redis = new Redis(process.env.REDIS_URL, {
-      tls: process.env.REDIS_URL.startsWith("redis://") ? {} : undefined,
-      retryStrategy: (times) => Math.min(times * 100, 3000),
-      reconnectOnError: (err) => {
-        console.error("Redis connection error:", err);
-        return true;
-      },
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-    });
-    redis.on("connect", () => console.log("✅ Redis connected"));
-    redis.on("error", (err) => console.error("Redis Error:", err));
-  } catch (error) {
-    console.error("Failed to initialize Redis:", error);
-    redis = null;
-  }
-} else {
-  console.warn("⚠️  REDIS_URL is not set. Redis will be disabled.");
-}
-if (redis) {
-  const pubClient = new Redis(process.env.REDIS_URL);
-  const subClient = new Redis(process.env.REDIS_URL);
-  io.adapter(createAdapter(pubClient, subClient));
-}
 const b2 = new B2({
   applicationKeyId: process.env.B2_APPLICATION_KEY_ID,
   applicationKey: process.env.B2_APPLICATION_KEY,
@@ -92,6 +63,18 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+// Initialize Redis Adapter only if Redis is enabled
+if (process.env.REDIS_URL) {
+  console.log("Initializing Redis for Socket.IO...");
+  try {
+    const pubClient = new Redis(process.env.REDIS_URL);
+    const subClient = pubClient.duplicate(); // More efficient than creating a new Redis instance
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log("✅ Socket.IO Redis Adapter initialized.");
+  } catch (error) {
+    console.error("❌ Failed to initialize Redis Adapter:", error);
+  }
+}
 
 // Optional Socket.IO auth middleware:
 io.use(async (socket, next) => {
