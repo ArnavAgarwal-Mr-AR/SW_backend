@@ -111,7 +111,7 @@ const rooms = new Map();
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   socket.on('message', async (data) => {
-    await redis.set(`message:${socket.id}`, data);
+    //await redis.set(`message:${socket.id}`, data);
     socket.broadcast.emit("message", data);
   });
   // Join room
