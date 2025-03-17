@@ -15,7 +15,7 @@ const { customAlphabet } = require('nanoid/non-secure');
 const cors = require('cors');
 const Redis = require("ioredis");
 const B2 = require('backblaze-b2');
-const { createAdapter } = require("@socket.io/redis-adapter");
+//const { createAdapter } = require("@socket.io/redis-adapter");
 
 // Load environment variables from .env
 dotenv.config();
@@ -69,7 +69,7 @@ if (process.env.REDIS_URL) {
   try {
     const pubClient = new Redis(process.env.REDIS_URL);
     const subClient = pubClient.duplicate(); // More efficient than creating a new Redis instance
-    io.adapter(createAdapter(pubClient, subClient));
+    //io.adapter(createAdapter(pubClient, subClient));
     console.log("✅ Socket.IO Redis Adapter initialized.");
   } catch (error) {
     console.error("❌ Failed to initialize Redis Adapter:", error);
