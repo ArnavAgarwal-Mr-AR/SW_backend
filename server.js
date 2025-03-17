@@ -13,7 +13,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { customAlphabet } = require('nanoid/non-secure');
 const cors = require('cors');
-const Redis = require("ioredis");
+//const Redis = require("ioredis");
 const B2 = require('backblaze-b2');
 
 
