@@ -23,7 +23,15 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const nanoid = customAlphabet('1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',20);
-const redis = new Redis(process.env.REDIS_URL); 
+const redis = new Redis(process.env.REDIS_URL, {
+  retryStrategy: (times) => Math.min(times * 50, 2000), // Retry logic
+  reconnectOnError: (err) => {
+    console.error("Redis error:", err);
+    return true;
+  },
+  tls: process.env.REDIS_URL.startsWith("rediss://") ? {} : undefined, // Secure TLS
+});
+
 const b2 = new B2({
   applicationKeyId: process.env.B2_APPLICATION_KEY_ID,
   applicationKey: process.env.B2_APPLICATION_KEY,
