@@ -13,9 +13,9 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { customAlphabet } = require('nanoid/non-secure');
 const cors = require('cors');
-//const Redis = require("ioredis");
+const Redis = require("ioredis");
 const B2 = require('backblaze-b2');
-
+const { createAdapter } = require("@socket.io/redis-adapter");
 
 // Load environment variables from .env
 dotenv.config();
@@ -23,14 +23,14 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const nanoid = customAlphabet('1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',20);
-/*
+
 let redis = null;
 
 if (process.env.REDIS_URL) {
   console.log("Initializing Redis...");
   try {
-    //redis = new Redis(process.env.REDIS_URL, {
-      //tls: process.env.REDIS_URL.startsWith("rediss://") ? {} : undefined,
+    redis = new Redis(process.env.REDIS_URL, {
+      tls: process.env.REDIS_URL.startsWith("redis://") ? {} : undefined,
       retryStrategy: (times) => Math.min(times * 100, 3000),
       reconnectOnError: (err) => {
         console.error("Redis connection error:", err);
@@ -39,6 +39,8 @@ if (process.env.REDIS_URL) {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
     });
+    redis.on("connect", () => console.log("✅ Redis connected"));
+    redis.on("error", (err) => console.error("Redis Error:", err));
   } catch (error) {
     console.error("Failed to initialize Redis:", error);
     redis = null;
@@ -46,8 +48,11 @@ if (process.env.REDIS_URL) {
 } else {
   console.warn("⚠️  REDIS_URL is not set. Redis will be disabled.");
 }
-*/
-
+if (redis) {
+  const pubClient = new Redis(process.env.REDIS_URL);
+  const subClient = new Redis(process.env.REDIS_URL);
+  io.adapter(createAdapter(pubClient, subClient));
+}
 const b2 = new B2({
   applicationKeyId: process.env.B2_APPLICATION_KEY_ID,
   applicationKey: process.env.B2_APPLICATION_KEY,
