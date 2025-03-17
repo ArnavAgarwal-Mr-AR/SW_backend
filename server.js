@@ -23,13 +23,14 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const nanoid = customAlphabet('1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',20);
+/*
 let redis = null;
 
 if (process.env.REDIS_URL) {
   console.log("Initializing Redis...");
   try {
-    redis = new Redis(process.env.REDIS_URL, {
-      tls: process.env.REDIS_URL.startsWith("rediss://") ? {} : undefined,
+    //redis = new Redis(process.env.REDIS_URL, {
+      //tls: process.env.REDIS_URL.startsWith("rediss://") ? {} : undefined,
       retryStrategy: (times) => Math.min(times * 100, 3000),
       reconnectOnError: (err) => {
         console.error("Redis connection error:", err);
@@ -45,7 +46,7 @@ if (process.env.REDIS_URL) {
 } else {
   console.warn("⚠️  REDIS_URL is not set. Redis will be disabled.");
 }
-
+*/
 
 const b2 = new B2({
   applicationKeyId: process.env.B2_APPLICATION_KEY_ID,
