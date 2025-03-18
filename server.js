@@ -61,6 +61,7 @@ const io = new Server(server, {
     ],
     methods: ['GET', 'POST'],
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
   },
 });
 // Initialize Redis Adapter only if Redis is enabled
